@@ -5,40 +5,53 @@ session_start();
 
 if (!isset($_SESSION['username'])) {
     header("Location: superadmin-index.php");
+    exit;
 }
 if($_SESSION['isadmin'] == 0 || $_SESSION['isadmin'] == 1){
     header("Location: ../logout.php");  
+    exit;
 }
 
-$sql = "SELECT * from users_info where id =(SELECT id from users where username = '{$_SESSION['username']}');";
-$result = mysqli_query($conn, $sql);
+// Use prepared statement to prevent SQL injection
+$stmt = $conn->prepare("SELECT * from users_info where id =(SELECT id from users where username = ?);");
+$stmt->bind_param("s", $_SESSION['username']);
+$stmt->execute();
+$result = $stmt->get_result();
 $userid = $_SESSION['id'];
 
 
 
 if (isset($_POST['submit'])) {
-    $fname = $_REQUEST['inputfirstname'];
-    $lname = $_REQUEST['inputlastname'];
-    $phone = $_REQUEST['inputphone'];
-    $email = $_REQUEST['inputEmail'];
-    $address = $_REQUEST['inputAddress'];
-    $ssn = $_REQUEST['inputssn'];
-    $bank = $_REQUEST['inputbank'];
-    $npass = $_REQUEST['inputnewPassword'];
-    $cpass = $_REQUEST['inputcnfPassword'];
-    $uid = $_REQUEST['uid'];
+    // Use prepared statements for all database operations
+    $fname = trim($_POST['inputfirstname']);
+    $lname = trim($_POST['inputlastname']);
+    $phone = trim($_POST['inputphone']);
+    $email = trim($_POST['inputEmail']);
+    $address = trim($_POST['inputAddress']);
+    $ssn = trim($_POST['inputssn']);
+    $bank = trim($_POST['inputbank']);
+    $npass = $_POST['inputnewPassword'];
+    $cpass = $_POST['inputcnfPassword'];
+    $uid = (int)$_POST['uid'];
 
     if ((!empty($fname)) && (!empty($lname)) && (!empty($email)) && (!empty($address)) && (!empty($ssn))) {
-        $upq = "UPDATE `users_info` SET `first_name` = '$fname', `last_name` = '$lname' , `phone` = '$phone', `email` = '$email', `address` = '$address', `ssn` = '$ssn', `bank_account` = '$bank' WHERE id = $uid;";
-        $upq2 = "UPDATE `users` SET `email` = '$email' where id =$uid; ";
-        $upload1 = mysqli_query($conn, $upq);
-        $upload2 = mysqli_query($conn, $upq2);
+        // Update user info with prepared statement
+        $upq = $conn->prepare("UPDATE `users_info` SET `first_name` = ?, `last_name` = ?, `phone` = ?, `email` = ?, `address` = ?, `ssn` = ?, `bank_account` = ? WHERE id = ?");
+        $upq->bind_param("sssssssi", $fname, $lname, $phone, $email, $address, $ssn, $bank, $uid);
+        $upload1 = $upq->execute();
+        
+        // Update email in users table
+        $upq2 = $conn->prepare("UPDATE `users` SET `email` = ? where id = ?");
+        $upq2->bind_param("si", $email, $uid);
+        $upload2 = $upq2->execute();
 
         if ((!empty($npass)) && (!empty($cpass))) {
             if (($npass == $cpass)) {
-                $pass = md5($cpass);
-                $upq3 = "UPDATE `users` SET `password` = '$pass' where id =$uid; ";
-                $upload3 = mysqli_query($conn, $upq3);
+                // Use password_hash instead of md5 for secure password hashing
+                $pass = password_hash($cpass, PASSWORD_DEFAULT);
+                $upq3 = $conn->prepare("UPDATE `users` SET `password` = ? where id = ?");
+                $upq3->bind_param("si", $pass, $uid);
+                $upload3 = $upq3->execute();
                 header('Location: ../logout.php');
                 exit;
             }
@@ -69,7 +82,7 @@ if (isset($_POST['submit'])) {
 <html lang="en">
 
 <head>
-    <title>AWS GOAT V2 - Welcome <?$_SESSION['username']?>!</title>
+    <title>AWS GOAT V2 - Welcome <?php echo htmlspecialchars($_SESSION['username']); ?>!</title>
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -218,11 +231,12 @@ if (isset($_POST['submit'])) {
                                 <div class="dropdown-menu dropdown-menu-right " aria-labelledby="navbarDropdown">
                                     <h6 class="dropdown-header">Organizations</h6>
                                     <?php
-                                    $sql = "SELECT * from organizations where organization_id != 0;";
-                                    $organizationresult = mysqli_query($conn, $sql);
+                                    $stmt = $conn->prepare("SELECT * from organizations where organization_id != 0;");
+                                    $stmt->execute();
+                                    $organizationresult = $stmt->get_result();
 
                                     while ($organizationrow = $organizationresult->fetch_assoc()) {
-                                        echo "<a class='dropdown-item' href='http://" . $_SERVER['HTTP_HOST'] . "/login.php?organization=" . $organizationrow["organization"] . "'>" . $organizationrow["organization"] . "</a>";
+                                        echo "<a class='dropdown-item' href='http://" . htmlspecialchars($_SERVER['HTTP_HOST']) . "/login.php?organization=" . htmlspecialchars($organizationrow["organization"]) . "'>" . htmlspecialchars($organizationrow["organization"]) . "</a>";
                                     }
                                     ?>
                                 </div>
@@ -277,8 +291,11 @@ if (isset($_POST['submit'])) {
 
     <div class="profilewrapper">
         <?php
-        $sql = "SELECT * from users_info where id =(SELECT id from users where username = '{$_SESSION['username']}');";
-        $result = mysqli_query($conn, $sql);
+        // Use prepared statement to prevent SQL injection
+        $stmt = $conn->prepare("SELECT * from users_info where id =(SELECT id from users where username = ?);");
+        $stmt->bind_param("s", $_SESSION['username']);
+        $stmt->execute();
+        $result = $stmt->get_result();
         ?>
         <div class="modal fade" id="myModal">
             <div class="modal-dialog modal-lg">
@@ -294,17 +311,17 @@ if (isset($_POST['submit'])) {
                                 <div class="card-body">
                                     <dl class="row">
                                         <dt class="col-6">Name</dt>
-                                        <dd class="col-6"><?php echo $row['first_name'] . " " . $row['last_name']; ?></dd>
+                                        <dd class="col-6"><?php echo htmlspecialchars($row['first_name'] . " " . $row['last_name']); ?></dd>
                                         <dt class="col-6">Email</dt>
-                                        <dd class="col-6"><?php echo $row['email']; ?></dd>
+                                        <dd class="col-6"><?php echo htmlspecialchars($row['email']); ?></dd>
                                         <dt class="col-6">Address</dt>
-                                        <dd class="col-6"><?php echo $row['address']; ?></dd>
+                                        <dd class="col-6"><?php echo htmlspecialchars($row['address']); ?></dd>
                                         <dt class="col-6">Social Security Number</dt>
-                                        <dd class="col-6"><?php echo $row['ssn']; ?></dd>
+                                        <dd class="col-6"><?php echo htmlspecialchars($row['ssn']); ?></dd>
                                         <dt class="col-6">Phone</dt>
-                                        <dd class="col-6"><?php echo $row['phone']; ?></dd>
+                                        <dd class="col-6"><?php echo htmlspecialchars($row['phone']); ?></dd>
                                         <dt class="col-6">Bank Account Number</dt>
-                                        <dd class="col-6"><?php echo $row['bank_account']; ?></dd>
+                                        <dd class="col-6"><?php echo htmlspecialchars($row['bank_account']); ?></dd>
                                     </dl>
                                 </div>
                             </div>
@@ -323,8 +340,11 @@ if (isset($_POST['submit'])) {
 
     <div class="settingswrapper">
         <?php
-        $sql = "SELECT * from users_info where id =(SELECT id from users where username = '{$_SESSION['username']}');";
-        $result = mysqli_query($conn, $sql);
+        // Use prepared statement to prevent SQL injection
+        $stmt = $conn->prepare("SELECT * from users_info where id =(SELECT id from users where username = ?);");
+        $stmt->bind_param("s", $_SESSION['username']);
+        $stmt->execute();
+        $result = $stmt->get_result();
 
         ?>
         <div class="modal fade" id="settingsModal">
@@ -338,47 +358,47 @@ if (isset($_POST['submit'])) {
                         <?php if ($result->num_rows > 0) {
                             $row = mysqli_fetch_assoc($result); ?>
                             <form method="POST" action="#">
-                                <input type='hidden' name='uid' value="<?php echo $_SESSION['id'] ?>">
+                                <input type='hidden' name='uid' value="<?php echo (int)$_SESSION['id'] ?>">
                                 <div class="form-group row">
                                     <label for="inputfirstname" class="col-sm-4 col-form-label">First Name</label>
                                     <div class="col-sm-8">
-                                        <input type="text" class="form-control" value="<?php echo $row['first_name'] ?>" id="inputfirstname" name="inputfirstname" placeholder="First Name">
+                                        <input type="text" class="form-control" value="<?php echo htmlspecialchars($row['first_name']) ?>" id="inputfirstname" name="inputfirstname" placeholder="First Name">
                                     </div>
                                 </div>
                                 <div class="form-group row">
                                     <label for="inputlastname" class="col-sm-4 col-form-label">Last Name</label>
                                     <div class="col-sm-8">
-                                        <input type="text" class="form-control" value="<?php echo $row['last_name'] ?>" id="inputlastname" name="inputlastname" placeholder="Last Name">
+                                        <input type="text" class="form-control" value="<?php echo htmlspecialchars($row['last_name']) ?>" id="inputlastname" name="inputlastname" placeholder="Last Name">
                                     </div>
                                 </div>
                                 <div class="form-group row">
                                     <label for="inputphone" class="col-sm-4 col-form-label">Phone</label>
                                     <div class="col-sm-8">
-                                        <input type="tel" class="form-control" value="<?php echo $row['phone'] ?>" id="inputphone" name="inputphone" placeholder="Phone Number">
+                                        <input type="tel" class="form-control" value="<?php echo htmlspecialchars($row['phone']) ?>" id="inputphone" name="inputphone" placeholder="Phone Number">
                                     </div>
                                 </div>
                                 <div class="form-group row">
                                     <label for="inputEmail" class="col-sm-4 col-form-label">Email</label>
                                     <div class="col-sm-8">
-                                        <input type="email" class="form-control" value="<?php echo $row['email'] ?>" id="inputEmail" name="inputEmail" placeholder="Email">
+                                        <input type="email" class="form-control" value="<?php echo htmlspecialchars($row['email']) ?>" id="inputEmail" name="inputEmail" placeholder="Email">
                                     </div>
                                 </div>
                                 <div class="form-group row">
                                     <label for="inputAddress" class="col-sm-4 col-form-label">Address</label>
                                     <div class="col-sm-8">
-                                        <input type="text" class="form-control" value="<?php echo $row['address'] ?>" id="inputAddress" name="inputAddress" placeholder="Address">
+                                        <input type="text" class="form-control" value="<?php echo htmlspecialchars($row['address']) ?>" id="inputAddress" name="inputAddress" placeholder="Address">
                                     </div>
                                 </div>
                                 <div class="form-group row">
                                     <label for="inputssn" class="col-sm-4 col-form-label">SSN</label>
                                     <div class="col-sm-8">
-                                        <input type="text" class="form-control" value="<?php echo $row['ssn'] ?>" id="inputssn" name="inputssn" placeholder="SSN">
+                                        <input type="text" class="form-control" value="<?php echo htmlspecialchars($row['ssn']) ?>" id="inputssn" name="inputssn" placeholder="SSN">
                                     </div>
                                 </div>
                                 <div class="form-group row">
                                     <label for="inputbank" class="col-sm-4 col-form-label">Account Number</label>
                                     <div class="col-sm-8">
-                                        <input type="text" class="form-control" value="<?php echo $row['bank_account'] ?>" id="inputbank" name="inputbank" placeholder="SSN">
+                                        <input type="text" class="form-control" value="<?php echo htmlspecialchars($row['bank_account']) ?>" id="inputbank" name="inputbank" placeholder="SSN">
                                     </div>
                                 </div>
                                 <div class="form-group row">
@@ -417,16 +437,22 @@ if (isset($_POST['submit'])) {
     <section id="homepage">
         <div class="homewrapper">
             <?php
-            $sql = "SELECT * from users_info where id =(SELECT id from users where username = '{$_SESSION['username']}');";
-            $sql2 = "SELECT organization from organizations where organization_id='{$_SESSION['organization_id']}';";
-            $result = mysqli_query($conn, $sql);
+            // Use prepared statements for both queries
+            $stmt = $conn->prepare("SELECT * from users_info where id =(SELECT id from users where username = ?);");
+            $stmt->bind_param("s", $_SESSION['username']);
+            $stmt->execute();
+            $result = $stmt->get_result();
             $row = mysqli_fetch_assoc($result);
-            $result2 = mysqli_query($conn, $sql2);
+            
+            $stmt2 = $conn->prepare("SELECT organization from organizations where organization_id=?;");
+            $stmt2->bind_param("i", $_SESSION['organization_id']);
+            $stmt2->execute();
+            $result2 = $stmt2->get_result();
             $row2 = mysqli_fetch_assoc($result2);
             ?>
             <div>
-            <h4 class="greetingstext" style="margin-left:12px;">Hello, <?php echo $row['first_name']; ?>! </h4>
-            <h3 class="greetingstext" style="margin-left:12px;">Welcome to <?php echo $row2['organization']; ?> Organization! </h3>
+            <h4 class="greetingstext" style="margin-left:12px;">Hello, <?php echo htmlspecialchars($row['first_name']); ?>! </h4>
+            <h3 class="greetingstext" style="margin-left:12px;">Welcome to <?php echo htmlspecialchars($row2['organization']); ?> Organization! </h3>
             
 <!--                 <img src="../images/homepage.png" style="height: 400px; width: 82%; padding-top:5px;"> -->
                 

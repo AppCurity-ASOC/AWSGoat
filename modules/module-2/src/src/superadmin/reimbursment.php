@@ -5,40 +5,49 @@ session_start();
 
 if (!isset($_SESSION['username'])) {
     header("Location: superadmin-index.php");
+    exit;
 }
 if($_SESSION['isadmin'] == 0 || $_SESSION['isadmin'] == 1){
-    header("Location: ../logout.php");  
+    header("Location: ../logout.php");
+    exit;
 }
 
-$sql = "SELECT * from users_info where id =(SELECT id from users where username = '{$_SESSION['username']}');";
-$result = mysqli_query($conn, $sql);
+$stmt = $conn->prepare("SELECT * from users_info where id =(SELECT id from users where username = ?);");
+$stmt->bind_param("s", $_SESSION['username']);
+$stmt->execute();
+$result = $stmt->get_result();
 $userid = $_SESSION['id'];
 
 
 
 if (isset($_POST['submit'])) {
-    $fname = $_REQUEST['inputfirstname'];
-    $lname = $_REQUEST['inputlastname'];
-    $phone = $_REQUEST['inputphone'];
-    $email = $_REQUEST['inputEmail'];
-    $address = $_REQUEST['inputAddress'];
-    $ssn = $_REQUEST['inputssn'];
-    $bank = $_REQUEST['inputbank'];
-    $npass = $_REQUEST['inputnewPassword'];
-    $cpass = $_REQUEST['inputcnfPassword'];
-    $uid = $_REQUEST['uid'];
+    $fname = htmlspecialchars(trim($_POST['inputfirstname']), ENT_QUOTES, 'UTF-8');
+    $lname = htmlspecialchars(trim($_POST['inputlastname']), ENT_QUOTES, 'UTF-8');
+    $phone = htmlspecialchars(trim($_POST['inputphone']), ENT_QUOTES, 'UTF-8');
+    $email = filter_var($_POST['inputEmail'], FILTER_SANITIZE_EMAIL);
+    $address = htmlspecialchars(trim($_POST['inputAddress']), ENT_QUOTES, 'UTF-8');
+    $ssn = htmlspecialchars(trim($_POST['inputssn']), ENT_QUOTES, 'UTF-8');
+    $bank = htmlspecialchars(trim($_POST['inputbank']), ENT_QUOTES, 'UTF-8');
+    $npass = $_POST['inputnewPassword'];
+    $cpass = $_POST['inputcnfPassword'];
+    $uid = (int)$_POST['uid'];
 
     if ((!empty($fname)) && (!empty($lname)) && (!empty($email)) && (!empty($address)) && (!empty($ssn))) {
-        $upq = "UPDATE `users_info` SET `first_name` = '$fname', `last_name` = '$lname' , `phone` = '$phone', `email` = '$email', `address` = '$address', `ssn` = '$ssn', `bank_account` = '$bank' WHERE id = $uid;";
-        $upq2 = "UPDATE `users` SET `email` = '$email' where id =$uid; ";
-        $upload1 = mysqli_query($conn, $upq);
-        $upload2 = mysqli_query($conn, $upq2);
+        $upq = $conn->prepare("UPDATE `users_info` SET `first_name` = ?, `last_name` = ?, `phone` = ?, `email` = ?, `address` = ?, `ssn` = ?, `bank_account` = ? WHERE id = ?");
+        $upq->bind_param("sssssssi", $fname, $lname, $phone, $email, $address, $ssn, $bank, $uid);
+        $upload1 = $upq->execute();
+        
+        $upq2 = $conn->prepare("UPDATE `users` SET `email` = ? where id = ?");
+        $upq2->bind_param("si", $email, $uid);
+        $upload2 = $upq2->execute();
 
         if ((!empty($npass)) && (!empty($cpass))) {
             if (($npass == $cpass)) {
-                $pass = md5($cpass);
-                $upq3 = "UPDATE `users` SET `password` = '$pass' where id =$uid; ";
-                $upload3 = mysqli_query($conn, $upq3);
+                // Use password_hash instead of md5
+                $pass = password_hash($cpass, PASSWORD_DEFAULT);
+                $upq3 = $conn->prepare("UPDATE `users` SET `password` = ? where id = ?");
+                $upq3->bind_param("si", $pass, $uid);
+                $upload3 = $upq3->execute();
                 header('Location: ../logout.php');
                 exit;
             }
@@ -104,11 +113,12 @@ if (isset($_POST['submit'])) {
                                 <div class="dropdown-menu dropdown-menu-right " aria-labelledby="navbarDropdown">
                                     <h6 class="dropdown-header">Organizations</h6>
                                     <?php
-                                    $sql = "SELECT * from organizations where organization_id != 0;";
-                                    $organizationresult = mysqli_query($conn, $sql);
+                                    $stmt = $conn->prepare("SELECT * from organizations where organization_id != 0;");
+                                    $stmt->execute();
+                                    $organizationresult = $stmt->get_result();
 
                                     while ($organizationrow = $organizationresult->fetch_assoc()) {
-                                        echo "<a class='dropdown-item' href='http://" . $_SERVER['HTTP_HOST'] . "/login.php?organization=" . $organizationrow["organization"] . "'>" . $organizationrow["organization"] . "</a>";
+                                        echo "<a class='dropdown-item' href='http://" . htmlspecialchars($_SERVER['HTTP_HOST'], ENT_QUOTES, 'UTF-8') . "/login.php?organization=" . htmlspecialchars($organizationrow["organization"], ENT_QUOTES, 'UTF-8') . "'>" . htmlspecialchars($organizationrow["organization"], ENT_QUOTES, 'UTF-8') . "</a>";
                                     }
                                     ?>
                                 </div>
@@ -163,8 +173,10 @@ if (isset($_POST['submit'])) {
 
     <div class="profilewrapper">
         <?php
-        $sql = "SELECT * from users_info where id =(SELECT id from users where username = '{$_SESSION['username']}');";
-        $result = mysqli_query($conn, $sql);
+        $stmt = $conn->prepare("SELECT * from users_info where id =(SELECT id from users where username = ?);");
+        $stmt->bind_param("s", $_SESSION['username']);
+        $stmt->execute();
+        $result = $stmt->get_result();
         ?>
         <div class="modal fade" id="myModal">
             <div class="modal-dialog modal-lg">
@@ -180,17 +192,17 @@ if (isset($_POST['submit'])) {
                                 <div class="card-body">
                                     <dl class="row">
                                         <dt class="col-6">Name</dt>
-                                        <dd class="col-6"><?php echo $row['first_name'] . " " . $row['last_name']; ?></dd>
+                                        <dd class="col-6"><?php echo htmlspecialchars($row['first_name'] . " " . $row['last_name'], ENT_QUOTES, 'UTF-8'); ?></dd>
                                         <dt class="col-6">Email</dt>
-                                        <dd class="col-6"><?php echo $row['email']; ?></dd>
+                                        <dd class="col-6"><?php echo htmlspecialchars($row['email'], ENT_QUOTES, 'UTF-8'); ?></dd>
                                         <dt class="col-6">Address</dt>
-                                        <dd class="col-6"><?php echo $row['address']; ?></dd>
+                                        <dd class="col-6"><?php echo htmlspecialchars($row['address'], ENT_QUOTES, 'UTF-8'); ?></dd>
                                         <dt class="col-6">Social Security Number</dt>
-                                        <dd class="col-6"><?php echo $row['ssn']; ?></dd>
+                                        <dd class="col-6"><?php echo htmlspecialchars($row['ssn'], ENT_QUOTES, 'UTF-8'); ?></dd>
                                         <dt class="col-6">Phone</dt>
-                                        <dd class="col-6"><?php echo $row['phone']; ?></dd>
+                                        <dd class="col-6"><?php echo htmlspecialchars($row['phone'], ENT_QUOTES, 'UTF-8'); ?></dd>
                                         <dt class="col-6">Bank Account Number</dt>
-                                        <dd class="col-6"><?php echo $row['bank_account']; ?></dd>
+                                        <dd class="col-6"><?php echo htmlspecialchars($row['bank_account'], ENT_QUOTES, 'UTF-8'); ?></dd>
                                     </dl>
                                 </div>
                             </div>
@@ -209,8 +221,10 @@ if (isset($_POST['submit'])) {
 
     <div class="settingswrapper">
         <?php
-        $sql = "SELECT * from users_info where id =(SELECT id from users where username = '{$_SESSION['username']}');";
-        $result = mysqli_query($conn, $sql);
+        $stmt = $conn->prepare("SELECT * from users_info where id =(SELECT id from users where username = ?);");
+        $stmt->bind_param("s", $_SESSION['username']);
+        $stmt->execute();
+        $result = $stmt->get_result();
 
         ?>
         <div class="modal fade" id="settingsModal">
@@ -224,47 +238,47 @@ if (isset($_POST['submit'])) {
                         <?php if ($result->num_rows > 0) {
                             $row = mysqli_fetch_assoc($result); ?>
                             <form method="POST" action="#">
-                                <input type='hidden' name='uid' value="<?php echo $_SESSION['id'] ?>">
+                                <input type='hidden' name='uid' value="<?php echo (int)$_SESSION['id'] ?>">
                                 <div class="form-group row">
                                     <label for="inputfirstname" class="col-sm-4 col-form-label">First Name</label>
                                     <div class="col-sm-8">
-                                        <input type="text" class="form-control" value="<?php echo $row['first_name'] ?>" id="inputfirstname" name="inputfirstname" placeholder="First Name">
+                                        <input type="text" class="form-control" value="<?php echo htmlspecialchars($row['first_name'], ENT_QUOTES, 'UTF-8') ?>" id="inputfirstname" name="inputfirstname" placeholder="First Name">
                                     </div>
                                 </div>
                                 <div class="form-group row">
                                     <label for="inputlastname" class="col-sm-4 col-form-label">Last Name</label>
                                     <div class="col-sm-8">
-                                        <input type="text" class="form-control" value="<?php echo $row['last_name'] ?>" id="inputlastname" name="inputlastname" placeholder="Last Name">
+                                        <input type="text" class="form-control" value="<?php echo htmlspecialchars($row['last_name'], ENT_QUOTES, 'UTF-8') ?>" id="inputlastname" name="inputlastname" placeholder="Last Name">
                                     </div>
                                 </div>
                                 <div class="form-group row">
                                     <label for="inputphone" class="col-sm-4 col-form-label">Phone</label>
                                     <div class="col-sm-8">
-                                        <input type="tel" class="form-control" value="<?php echo $row['phone'] ?>" id="inputphone" name="inputphone" placeholder="Phone Number">
+                                        <input type="tel" class="form-control" value="<?php echo htmlspecialchars($row['phone'], ENT_QUOTES, 'UTF-8') ?>" id="inputphone" name="inputphone" placeholder="Phone Number">
                                     </div>
                                 </div>
                                 <div class="form-group row">
                                     <label for="inputEmail" class="col-sm-4 col-form-label">Email</label>
                                     <div class="col-sm-8">
-                                        <input type="email" class="form-control" value="<?php echo $row['email'] ?>" id="inputEmail" name="inputEmail" placeholder="Email">
+                                        <input type="email" class="form-control" value="<?php echo htmlspecialchars($row['email'], ENT_QUOTES, 'UTF-8') ?>" id="inputEmail" name="inputEmail" placeholder="Email">
                                     </div>
                                 </div>
                                 <div class="form-group row">
                                     <label for="inputAddress" class="col-sm-4 col-form-label">Address</label>
                                     <div class="col-sm-8">
-                                        <input type="text" class="form-control" value="<?php echo $row['address'] ?>" id="inputAddress" name="inputAddress" placeholder="Address">
+                                        <input type="text" class="form-control" value="<?php echo htmlspecialchars($row['address'], ENT_QUOTES, 'UTF-8') ?>" id="inputAddress" name="inputAddress" placeholder="Address">
                                     </div>
                                 </div>
                                 <div class="form-group row">
                                     <label for="inputssn" class="col-sm-4 col-form-label">SSN</label>
                                     <div class="col-sm-8">
-                                        <input type="text" class="form-control" value="<?php echo $row['ssn'] ?>" id="inputssn" name="inputssn" placeholder="SSN">
+                                        <input type="text" class="form-control" value="<?php echo htmlspecialchars($row['ssn'], ENT_QUOTES, 'UTF-8') ?>" id="inputssn" name="inputssn" placeholder="SSN">
                                     </div>
                                 </div>
                                 <div class="form-group row">
                                     <label for="inputbank" class="col-sm-4 col-form-label">Account Number</label>
                                     <div class="col-sm-8">
-                                        <input type="text" class="form-control" value="<?php echo $row['bank_account'] ?>" id="inputbank" name="inputbank" placeholder="SSN">
+                                        <input type="text" class="form-control" value="<?php echo htmlspecialchars($row['bank_account'], ENT_QUOTES, 'UTF-8') ?>" id="inputbank" name="inputbank" placeholder="SSN">
                                     </div>
                                 </div>
                                 <div class="form-group row">
@@ -328,8 +342,10 @@ if (isset($_POST['submit'])) {
                                         </thead>
                                         <tbody class="tablebodyrows">
                                             <?php
-                                            $queryrem = "select id,reimbursment_id, first_name, type, filed_on, amount, status, file   from `reimbursments` where id IN (SELECT id from users where organization_id = '{$_SESSION['organization_id']}') and isadmin = 1  ORDER BY filed_on DESC LIMIT 7;";
-                                            $remresult = mysqli_query($conn, $queryrem);
+                                            $stmt = $conn->prepare("select id,reimbursment_id, first_name, type, filed_on, amount, status, file from `reimbursments` where id IN (SELECT id from users where organization_id = ?) and isadmin = 1 ORDER BY filed_on DESC LIMIT 7;");
+                                            $stmt->bind_param("i", $_SESSION['organization_id']);
+                                            $stmt->execute();
+                                            $remresult = $stmt->get_result();
 
                                             if (!$remresult) {
                                                 die("Invalid Query: ");
@@ -337,19 +353,19 @@ if (isset($_POST['submit'])) {
 
                                             while ($remrow = $remresult->fetch_assoc()) {
                                                 echo "<tr>
-                                                    <td>" . $remrow["reimbursment_id"] . "</td>
-                                                    <td>" . $remrow["first_name"] . "</td>
-                                                    <td>" . $remrow["type"] . "</td>
-                                                    <td>" . $remrow["filed_on"] . "</td>
-                                                    <td>" . $remrow["amount"] . "</td>
-                                                    <td> <a href=" . $remrow["file"] . " target='_blank'>
+                                                    <td>" . htmlspecialchars($remrow["reimbursment_id"], ENT_QUOTES, 'UTF-8') . "</td>
+                                                    <td>" . htmlspecialchars($remrow["first_name"], ENT_QUOTES, 'UTF-8') . "</td>
+                                                    <td>" . htmlspecialchars($remrow["type"], ENT_QUOTES, 'UTF-8') . "</td>
+                                                    <td>" . htmlspecialchars($remrow["filed_on"], ENT_QUOTES, 'UTF-8') . "</td>
+                                                    <td>" . htmlspecialchars($remrow["amount"], ENT_QUOTES, 'UTF-8') . "</td>
+                                                    <td> <a href=" . htmlspecialchars($remrow["file"], ENT_QUOTES, 'UTF-8') . " target='_blank'>
                                                     <button class='btn btn-primary' type='button'>View File</button></a> </td>
-                                                    <td>" . $remrow["status"] . "</td>";
+                                                    <td>" . htmlspecialchars($remrow["status"], ENT_QUOTES, 'UTF-8') . "</td>";
                                                 echo "<td>
                                                 <form action='reimbursment-approve-super.php' method='post'>
                                                     <input type='radio' name='review' value='Approved'>Approve</br>
                                                     <input type='radio' name='review' value='Rejected'>Reject</br>
-                                                    <input type='hidden' name='reimbursment_id' value=" . $remrow['reimbursment_id'] . ">
+                                                    <input type='hidden' name='reimbursment_id' value=" . htmlspecialchars($remrow['reimbursment_id'], ENT_QUOTES, 'UTF-8') . ">
                                                     <button class='btn' type='submit' name='save_rem_status'>Review</button>
                                                     <button class='btn' type='delete' name='delete_rem_status'>Delete</button>
                                                 </form>

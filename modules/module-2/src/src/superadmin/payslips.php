@@ -5,40 +5,55 @@ session_start();
 
 if (!isset($_SESSION['username'])) {
     header("Location: superadmin-index.php");
+    exit;
 }
 if($_SESSION['isadmin'] == 0 || $_SESSION['isadmin'] == 1){
-    header("Location: ../logout.php");  
+    header("Location: ../logout.php");
+    exit;
 }
 
-$sql = "SELECT * from users_info where id =(SELECT id from users where username = '{$_SESSION['username']}');";
-$result = mysqli_query($conn, $sql);
+$stmt = $conn->prepare("SELECT * from users_info where id =(SELECT id from users where username = ?);");
+$stmt->bind_param("s", $_SESSION['username']);
+$stmt->execute();
+$result = $stmt->get_result();
 $userid = $_SESSION['id'];
 
 
 
 if (isset($_POST['submit'])) {
-    $fname = $_REQUEST['inputfirstname'];
-    $lname = $_REQUEST['inputlastname'];
-    $phone = $_REQUEST['inputphone'];
-    $email = $_REQUEST['inputEmail'];
-    $address = $_REQUEST['inputAddress'];
-    $ssn = $_REQUEST['inputssn'];
-    $bank = $_REQUEST['inputbank'];
-    $npass = $_REQUEST['inputnewPassword'];
-    $cpass = $_REQUEST['inputcnfPassword'];
-    $uid = $_REQUEST['uid'];
+    $fname = htmlspecialchars(trim($_POST['inputfirstname']), ENT_QUOTES, 'UTF-8');
+    $lname = htmlspecialchars(trim($_POST['inputlastname']), ENT_QUOTES, 'UTF-8');
+    $phone = htmlspecialchars(trim($_POST['inputphone']), ENT_QUOTES, 'UTF-8');
+    $email = filter_var($_POST['inputEmail'], FILTER_SANITIZE_EMAIL);
+    $address = htmlspecialchars(trim($_POST['inputAddress']), ENT_QUOTES, 'UTF-8');
+    $ssn = htmlspecialchars(trim($_POST['inputssn']), ENT_QUOTES, 'UTF-8');
+    $bank = htmlspecialchars(trim($_POST['inputbank']), ENT_QUOTES, 'UTF-8');
+    $npass = $_POST['inputnewPassword'];
+    $cpass = $_POST['inputcnfPassword'];
+    $uid = filter_var($_POST['uid'], FILTER_VALIDATE_INT);
+
+    if (!$uid) {
+        $_SESSION['errorMsg'] = "Invalid user ID";
+        header('Location: superadmin-index.php');
+        exit;
+    }
 
     if ((!empty($fname)) && (!empty($lname)) && (!empty($email)) && (!empty($address)) && (!empty($ssn))) {
-        $upq = "UPDATE `users_info` SET `first_name` = '$fname', `last_name` = '$lname' , `phone` = '$phone', `email` = '$email', `address` = '$address', `ssn` = '$ssn', `bank_account` = '$bank' WHERE id = $uid;";
-        $upq2 = "UPDATE `users` SET `email` = '$email' where id =$uid; ";
-        $upload1 = mysqli_query($conn, $upq);
-        $upload2 = mysqli_query($conn, $upq2);
+        $upq = $conn->prepare("UPDATE `users_info` SET `first_name` = ?, `last_name` = ?, `phone` = ?, `email` = ?, `address` = ?, `ssn` = ?, `bank_account` = ? WHERE id = ?");
+        $upq->bind_param("sssssssi", $fname, $lname, $phone, $email, $address, $ssn, $bank, $uid);
+        $upload1 = $upq->execute();
+        
+        $upq2 = $conn->prepare("UPDATE `users` SET `email` = ? where id = ?");
+        $upq2->bind_param("si", $email, $uid);
+        $upload2 = $upq2->execute();
 
         if ((!empty($npass)) && (!empty($cpass))) {
             if (($npass == $cpass)) {
-                $pass = md5($cpass);
-                $upq3 = "UPDATE `users` SET `password` = '$pass' where id =$uid; ";
-                $upload3 = mysqli_query($conn, $upq3);
+                // Use password_hash instead of md5
+                $pass = password_hash($cpass, PASSWORD_DEFAULT);
+                $upq3 = $conn->prepare("UPDATE `users` SET `password` = ? where id = ?");
+                $upq3->bind_param("si", $pass, $uid);
+                $upload3 = $upq3->execute();
                 header('Location: ../logout.php');
                 exit;
             }
@@ -55,38 +70,52 @@ if (isset($_POST['submit'])) {
         exit;
     }
 } else if (isset($_REQUEST['request'])) {
-    if( $_FILES['file']['name'] != "" ) {
+    if( isset($_FILES['file']) && $_FILES['file']['name'] != "" ) {
+        // Validate file type and size
+        $allowed_extensions = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
+        $temp = explode('.', $_FILES['file']['name']);
+        $extension = strtolower(end($temp));
+        
+        if (!in_array($extension, $allowed_extensions)) {
+            die("Invalid file type. Only PDF, DOC, DOCX, JPG, JPEG, PNG are allowed.");
+        }
+        
+        if ($_FILES['file']['size'] > 5000000) { // 5MB limit
+            die("File is too large. Maximum size is 5MB.");
+        }
+        
         $currentDirectory = getcwd();
         $uploadDirectory = "/documents/payslips/" ;
 
-        $salt = rand(1, 999999);
-        $temp= explode('.',$_FILES['file']['name']);
-        $extension = end($temp);
-        $fileName = bin2hex("$salt" . $_FILES['file']['name']) . "." . "$extension";
+        $salt = bin2hex(random_bytes(8));
+        $fileName = $salt . "_" . time() . "." . $extension;
        
         $uploadPath = $_SERVER['DOCUMENT_ROOT'] .  $uploadDirectory .  basename($fileName);
-        move_uploaded_file( $_FILES['file']['tmp_name'],$uploadPath) or die( "Could not copy file!");
+        
+        if (!move_uploaded_file($_FILES['file']['tmp_name'], $uploadPath)) {
+            die("Could not copy file!");
+        }
+        
+        $remname = filter_var($_POST['remname'], FILTER_VALIDATE_INT);
+        $date = htmlspecialchars(trim($_POST['date']), ENT_QUOTES, 'UTF-8');
+        $filepath = "../" . $uploadDirectory .  basename($fileName);
+
+        if ((!empty($remname)) && (!empty($date)) && (!empty($filepath)) ) {
+            $queryreminsert = $conn->prepare("INSERT INTO `payslips` (`id`,`date`, `file`) VALUES(?, ?, ?)");
+            $queryreminsert->bind_param("iss", $remname, $date, $filepath);
+            $upload5 = $queryreminsert->execute();
+        }
+        else{
+            header('Location: payslips.php');
+            exit;
+        } 
+
+        header('Location: payslips.php');
+        exit;
     }
     else {
         die("No file specified!");
     }
-    $remname = $_REQUEST['remname'];
-    $date = $_REQUEST['date'];
-    $filepath = "../" . $uploadDirectory .  basename($fileName);
-
-    if ((!empty($remname)) && (!empty($date)) && (!empty($filepath)) ) {
-        $queryreminsert = "INSERT INTO `payslips` (`id`,`date`, `file`) VALUES('$remname','$date','$filepath')";
-        $upload5 = mysqli_query($conn, $queryreminsert);
-    }
-    else{
-        header('Location: payslips.php');
-        exit;
-    } 
-
-    header('Location: payslips.php');
-    exit;
-
-    
 }
 
 
@@ -102,7 +131,7 @@ if (isset($_POST['submit'])) {
 <html lang="en">
 
 <head>
-    <title>AWS GOAT V2 - Payslips <?$_SESSION['username']?>!</title>
+    <title>AWS GOAT V2 - Payslips</title>
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -141,7 +170,8 @@ if (isset($_POST['submit'])) {
                                     $organizationresult = mysqli_query($conn, $sql);
 
                                     while ($organizationrow = $organizationresult->fetch_assoc()) {
-                                        echo "<a class='dropdown-item' href='http://" . $_SERVER['HTTP_HOST'] . "/login.php?organization=" . $organizationrow["organization"] . "'>" . $organizationrow["organization"] . "</a>";
+                                        $org_name = htmlspecialchars($organizationrow["organization"], ENT_QUOTES, 'UTF-8');
+                                        echo "<a class='dropdown-item' href='http://" . htmlspecialchars($_SERVER['HTTP_HOST'], ENT_QUOTES, 'UTF-8') . "/login.php?organization=" . urlencode($org_name) . "'>" . $org_name . "</a>";
                                     }
                                     ?>
                                 </div>
@@ -196,8 +226,10 @@ if (isset($_POST['submit'])) {
 
     <div class="profilewrapper">
         <?php
-        $sql = "SELECT * from users_info where id =(SELECT id from users where username = '{$_SESSION['username']}');";
-        $result = mysqli_query($conn, $sql);
+        $stmt = $conn->prepare("SELECT * from users_info where id =(SELECT id from users where username = ?);");
+        $stmt->bind_param("s", $_SESSION['username']);
+        $stmt->execute();
+        $result = $stmt->get_result();
         ?>
         <div class="modal fade" id="myModal">
             <div class="modal-dialog modal-lg">
@@ -213,17 +245,17 @@ if (isset($_POST['submit'])) {
                                 <div class="card-body">
                                     <dl class="row">
                                         <dt class="col-6">Name</dt>
-                                        <dd class="col-6"><?php echo $row['first_name'] . " " . $row['last_name']; ?></dd>
+                                        <dd class="col-6"><?php echo htmlspecialchars($row['first_name'] . " " . $row['last_name'], ENT_QUOTES, 'UTF-8'); ?></dd>
                                         <dt class="col-6">Email</dt>
-                                        <dd class="col-6"><?php echo $row['email']; ?></dd>
+                                        <dd class="col-6"><?php echo htmlspecialchars($row['email'], ENT_QUOTES, 'UTF-8'); ?></dd>
                                         <dt class="col-6">Address</dt>
-                                        <dd class="col-6"><?php echo $row['address']; ?></dd>
+                                        <dd class="col-6"><?php echo htmlspecialchars($row['address'], ENT_QUOTES, 'UTF-8'); ?></dd>
                                         <dt class="col-6">Social Security Number</dt>
-                                        <dd class="col-6"><?php echo $row['ssn']; ?></dd>
+                                        <dd class="col-6"><?php echo htmlspecialchars($row['ssn'], ENT_QUOTES, 'UTF-8'); ?></dd>
                                         <dt class="col-6">Phone</dt>
-                                        <dd class="col-6"><?php echo $row['phone']; ?></dd>
+                                        <dd class="col-6"><?php echo htmlspecialchars($row['phone'], ENT_QUOTES, 'UTF-8'); ?></dd>
                                         <dt class="col-6">Bank Account Number</dt>
-                                        <dd class="col-6"><?php echo $row['bank_account']; ?></dd>
+                                        <dd class="col-6"><?php echo htmlspecialchars($row['bank_account'], ENT_QUOTES, 'UTF-8'); ?></dd>
                                     </dl>
                                 </div>
                             </div>
@@ -242,8 +274,10 @@ if (isset($_POST['submit'])) {
 
     <div class="settingswrapper">
         <?php
-        $sql = "SELECT * from users_info where id =(SELECT id from users where username = '{$_SESSION['username']}');";
-        $result = mysqli_query($conn, $sql);
+        $stmt = $conn->prepare("SELECT * from users_info where id =(SELECT id from users where username = ?);");
+        $stmt->bind_param("s", $_SESSION['username']);
+        $stmt->execute();
+        $result = $stmt->get_result();
 
         ?>
         <div class="modal fade" id="settingsModal">
@@ -257,47 +291,47 @@ if (isset($_POST['submit'])) {
                         <?php if ($result->num_rows > 0) {
                             $row = mysqli_fetch_assoc($result); ?>
                             <form method="POST" action="#">
-                                <input type='hidden' name='uid' value="<?php echo $_SESSION['id'] ?>">
+                                <input type='hidden' name='uid' value="<?php echo htmlspecialchars($_SESSION['id'], ENT_QUOTES, 'UTF-8'); ?>">
                                 <div class="form-group row">
                                     <label for="inputfirstname" class="col-sm-4 col-form-label">First Name</label>
                                     <div class="col-sm-8">
-                                        <input type="text" class="form-control" value="<?php echo $row['first_name'] ?>" id="inputfirstname" name="inputfirstname" placeholder="First Name">
+                                        <input type="text" class="form-control" value="<?php echo htmlspecialchars($row['first_name'], ENT_QUOTES, 'UTF-8'); ?>" id="inputfirstname" name="inputfirstname" placeholder="First Name">
                                     </div>
                                 </div>
                                 <div class="form-group row">
                                     <label for="inputlastname" class="col-sm-4 col-form-label">Last Name</label>
                                     <div class="col-sm-8">
-                                        <input type="text" class="form-control" value="<?php echo $row['last_name'] ?>" id="inputlastname" name="inputlastname" placeholder="Last Name">
+                                        <input type="text" class="form-control" value="<?php echo htmlspecialchars($row['last_name'], ENT_QUOTES, 'UTF-8'); ?>" id="inputlastname" name="inputlastname" placeholder="Last Name">
                                     </div>
                                 </div>
                                 <div class="form-group row">
                                     <label for="inputphone" class="col-sm-4 col-form-label">Phone</label>
                                     <div class="col-sm-8">
-                                        <input type="tel" class="form-control" value="<?php echo $row['phone'] ?>" id="inputphone" name="inputphone" placeholder="Phone Number">
+                                        <input type="tel" class="form-control" value="<?php echo htmlspecialchars($row['phone'], ENT_QUOTES, 'UTF-8'); ?>" id="inputphone" name="inputphone" placeholder="Phone Number">
                                     </div>
                                 </div>
                                 <div class="form-group row">
                                     <label for="inputEmail" class="col-sm-4 col-form-label">Email</label>
                                     <div class="col-sm-8">
-                                        <input type="email" class="form-control" value="<?php echo $row['email'] ?>" id="inputEmail" name="inputEmail" placeholder="Email">
+                                        <input type="email" class="form-control" value="<?php echo htmlspecialchars($row['email'], ENT_QUOTES, 'UTF-8'); ?>" id="inputEmail" name="inputEmail" placeholder="Email">
                                     </div>
                                 </div>
                                 <div class="form-group row">
                                     <label for="inputAddress" class="col-sm-4 col-form-label">Address</label>
                                     <div class="col-sm-8">
-                                        <input type="text" class="form-control" value="<?php echo $row['address'] ?>" id="inputAddress" name="inputAddress" placeholder="Address">
+                                        <input type="text" class="form-control" value="<?php echo htmlspecialchars($row['address'], ENT_QUOTES, 'UTF-8'); ?>" id="inputAddress" name="inputAddress" placeholder="Address">
                                     </div>
                                 </div>
                                 <div class="form-group row">
                                     <label for="inputssn" class="col-sm-4 col-form-label">SSN</label>
                                     <div class="col-sm-8">
-                                        <input type="text" class="form-control" value="<?php echo $row['ssn'] ?>" id="inputssn" name="inputssn" placeholder="SSN">
+                                        <input type="text" class="form-control" value="<?php echo htmlspecialchars($row['ssn'], ENT_QUOTES, 'UTF-8'); ?>" id="inputssn" name="inputssn" placeholder="SSN">
                                     </div>
                                 </div>
                                 <div class="form-group row">
                                     <label for="inputbank" class="col-sm-4 col-form-label">Account Number</label>
                                     <div class="col-sm-8">
-                                        <input type="text" class="form-control" value="<?php echo $row['bank_account'] ?>" id="inputbank" name="inputbank" placeholder="SSN">
+                                        <input type="text" class="form-control" value="<?php echo htmlspecialchars($row['bank_account'], ENT_QUOTES, 'UTF-8'); ?>" id="inputbank" name="inputbank" placeholder="SSN">
                                     </div>
                                 </div>
                                 <div class="form-group row">
@@ -351,15 +385,17 @@ if (isset($_POST['submit'])) {
                                                 <select class="custom-select mr-sm-4" id="remname" name="remname">
                                                     <option selected>Choose</option>
                                                     <?php
-                                                        $queryrem = "select id, username from `users` where organization_id = '{$_SESSION['organization_id']}' AND isadmin = 1;";
-                                                        $remresult = mysqli_query($conn, $queryrem);
+                                                        $stmt = $conn->prepare("select id, username from `users` where organization_id = ? AND isadmin = 1;");
+                                                        $stmt->bind_param("i", $_SESSION['organization_id']);
+                                                        $stmt->execute();
+                                                        $remresult = $stmt->get_result();
             
                                                         if (!$remresult) {
                                                             die("Invalid Query: ");
                                                         }
 
                                                         while ($remrow = $remresult->fetch_assoc()) {
-                                                        echo "<option value=" . $remrow["id"] . ">" . $remrow["username"] . " </option>";
+                                                        echo "<option value=" . htmlspecialchars($remrow["id"], ENT_QUOTES, 'UTF-8') . ">" . htmlspecialchars($remrow["username"], ENT_QUOTES, 'UTF-8') . " </option>";
                                                         }
                                                     ?>
                                                 </select>
@@ -401,8 +437,10 @@ if (isset($_POST['submit'])) {
                                         </thead>
                                         <tbody class="tablebodyrows">
                                             <?php
-                                            $queryrem = "select * from `payslips` where id=$userid  ORDER BY date DESC LIMIT 4;";
-                                            $remresult = mysqli_query($conn, $queryrem);
+                                            $stmt = $conn->prepare("select * from `payslips` where id=? ORDER BY date DESC LIMIT 4;");
+                                            $stmt->bind_param("i", $userid);
+                                            $stmt->execute();
+                                            $remresult = $stmt->get_result();
 
                                             if (!$remresult) {
                                                 die("Invalid Query: ");
@@ -412,8 +450,8 @@ if (isset($_POST['submit'])) {
                                                 $date1=date_create($remrow["date"]);
                                                 echo "<tr>
                                                     <td>" . date_format($date1,"Y F") . "</td>
-                                                    <td>" . $remrow['payslip_id'] . "</td>
-                                                    <td><a href=" . $remrow["file"] . " target='_blank'>
+                                                    <td>" . htmlspecialchars($remrow['payslip_id'], ENT_QUOTES, 'UTF-8') . "</td>
+                                                    <td><a href=" . htmlspecialchars($remrow["file"], ENT_QUOTES, 'UTF-8') . " target='_blank'>
                                                     <button class='btn btn-primary' type='button'>View File</button></a></td>                
                                                 </tr>";
                                             }
