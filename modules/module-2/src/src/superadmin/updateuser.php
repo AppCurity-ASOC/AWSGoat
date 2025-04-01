@@ -3,27 +3,36 @@
 include_once '../config.inc';
 
 if (isset($_POST['update_user'])){
-    $fname = $_REQUEST['inputfirstname'];
-    $lname = $_REQUEST['inputlastname'];
-    $phone = $_REQUEST['inputphone'];
-    $email = $_REQUEST['inputEmail'];
-    $address = $_REQUEST['inputAddress'];
-    $ssn = $_REQUEST['inputssn'];
-    $bank = $_REQUEST['inputbank'];
-    $npass = $_REQUEST['inputnewPassword'];
-    $cpass = $_REQUEST['inputcnfPassword'];
+    $fname = isset($_REQUEST['inputfirstname']) ? $_REQUEST['inputfirstname'] : '';
+    $lname = isset($_REQUEST['inputlastname']) ? $_REQUEST['inputlastname'] : '';
+    $phone = isset($_REQUEST['inputphone']) ? $_REQUEST['inputphone'] : '';
+    $email = isset($_REQUEST['inputEmail']) ? $_REQUEST['inputEmail'] : '';
+    $address = isset($_REQUEST['inputAddress']) ? $_REQUEST['inputAddress'] : '';
+    $ssn = isset($_REQUEST['inputssn']) ? $_REQUEST['inputssn'] : '';
+    $bank = isset($_REQUEST['inputbank']) ? $_REQUEST['inputbank'] : '';
+    $npass = isset($_REQUEST['inputnewPassword']) ? $_REQUEST['inputnewPassword'] : '';
+    $cpass = isset($_REQUEST['inputcnfPassword']) ? $_REQUEST['inputcnfPassword'] : '';
 
     if ((!empty($fname)) && (!empty($lname)) && (!empty($email)) && (!empty($address)) && (!empty($ssn))) {
-        $upq = "UPDATE `users_info` SET `first_name` = '$fname', `last_name` = '$lname' , `phone` = '$phone', `email` = '$email', `address` = '$address', `ssn` = '$ssn', `bank_account` = '$bank' WHERE id = (SELECT id from users where username = '{$_SESSION['username']}');";
-        $upq2 = "UPDATE `users` SET `email` = '$email' where id =(SELECT id from users where username = '{$_POST['username']}'); ";
-        $upload1 = mysqli_query($conn, $upq);
-        $upload2 = mysqli_query($conn, $upq2);
+        // Prepare statements to prevent SQL injection
+        $stmt1 = $conn->prepare("UPDATE `users_info` SET `first_name` = ?, `last_name` = ?, `phone` = ?, `email` = ?, `address` = ?, `ssn` = ?, `bank_account` = ? WHERE id = (SELECT id from users where username = ?)");
+        $stmt1->bind_param("ssssssss", $fname, $lname, $phone, $email, $address, $ssn, $bank, $_SESSION['username']);
+        $upload1 = $stmt1->execute();
+        $stmt1->close();
+        
+        $stmt2 = $conn->prepare("UPDATE `users` SET `email` = ? where id =(SELECT id from users where username = ?)");
+        $stmt2->bind_param("ss", $email, $_POST['username']);
+        $upload2 = $stmt2->execute();
+        $stmt2->close();
 
         if ((!empty($npass)) && (!empty($cpass))) {
             if (($npass == $cpass)) {
-                $pass=md5($cpass);
-                $upq3 = "UPDATE `users` SET `password` = '$pass' where id =$userid; ";
-                $upload3 = mysqli_query($conn, $upq3);
+                // Use secure password hashing with PASSWORD_BCRYPT
+                $pass = password_hash($cpass, PASSWORD_BCRYPT);
+                $stmt3 = $conn->prepare("UPDATE `users` SET `password` = ? where id = ?");
+                $stmt3->bind_param("si", $pass, $userid);
+                $upload3 = $stmt3->execute();
+                $stmt3->close();
                 header('Location: ../logout.php');
                 exit;
             }

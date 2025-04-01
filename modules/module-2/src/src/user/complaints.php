@@ -12,35 +12,44 @@ if($_SESSION['isadmin'] == 1 || $_SESSION['isadmin'] == 2){
     header("Location: ../logout.php");  
 }
 
-$sql = "SELECT * from users_info where id =(SELECT id from users where username = '{$_SESSION['username']}');";
-$result = mysqli_query($conn, $sql);
+// Use prepared statement to prevent SQL injection
+$stmt = $conn->prepare("SELECT * from users_info where id =(SELECT id from users where username = ?);");
+$stmt->bind_param("s", $_SESSION['username']);
+$stmt->execute();
+$result = $stmt->get_result();
 $userid = $_SESSION['id'];
 $resultname = mysqli_fetch_assoc($result);
 $firstname = $resultname['first_name'];
 
 if (isset($_POST['submit'])) {
-    $fname = $_REQUEST['inputfirstname'];
-    $lname = $_REQUEST['inputlastname'];
-    $phone = $_REQUEST['inputphone'];
-    $email = $_REQUEST['inputEmail'];
-    $address = $_REQUEST['inputAddress'];
-    $ssn = $_REQUEST['inputssn'];
-    $bank = $_REQUEST['inputbank'];
-    $npass = $_REQUEST['inputnewPassword'];
-    $cpass = $_REQUEST['inputcnfPassword'];
-    $uid = $_REQUEST['uid'];
+    $fname = trim($_POST['inputfirstname']);
+    $lname = trim($_POST['inputlastname']);
+    $phone = trim($_POST['inputphone']);
+    $email = trim($_POST['inputEmail']);
+    $address = trim($_POST['inputAddress']);
+    $ssn = trim($_POST['inputssn']);
+    $bank = trim($_POST['inputbank']);
+    $npass = $_POST['inputnewPassword'];
+    $cpass = $_POST['inputcnfPassword'];
+    $uid = (int)$_POST['uid'];
 
     if ((!empty($fname)) && (!empty($lname)) && (!empty($email)) && (!empty($address)) && (!empty($ssn))) {
-        $upq = "UPDATE `users_info` SET `first_name` = '$fname', `last_name` = '$lname' , `phone` = '$phone', `email` = '$email', `address` = '$address', `ssn` = '$ssn', `bank_account` = '$bank' WHERE id = $uid;";
-        $upq2 = "UPDATE `users` SET `email` = '$email' where id =$uid; ";
-        $upload1 = mysqli_query($conn, $upq);
-        $upload2 = mysqli_query($conn, $upq2);
+        // Use prepared statements to prevent SQL injection
+        $upq = $conn->prepare("UPDATE `users_info` SET `first_name` = ?, `last_name` = ?, `phone` = ?, `email` = ?, `address` = ?, `ssn` = ?, `bank_account` = ? WHERE id = ?");
+        $upq->bind_param("sssssssi", $fname, $lname, $phone, $email, $address, $ssn, $bank, $uid);
+        $upload1 = $upq->execute();
+        
+        $upq2 = $conn->prepare("UPDATE `users` SET `email` = ? where id = ?");
+        $upq2->bind_param("si", $email, $uid);
+        $upload2 = $upq2->execute();
 
         if ((!empty($npass)) && (!empty($cpass))) {
             if (($npass == $cpass)) {
-                $pass = md5($cpass);
-                $upq3 = "UPDATE `users` SET `password` = '$pass' where id =$uid; ";
-                $upload3 = mysqli_query($conn, $upq3);
+                // Use secure password hashing with PASSWORD_BCRYPT
+                $pass = password_hash($cpass, PASSWORD_BCRYPT);
+                $upq3 = $conn->prepare("UPDATE `users` SET `password` = ? where id = ?");
+                $upq3->bind_param("si", $pass, $uid);
+                $upload3 = $upq3->execute();
                 header('Location: ../logout.php');
                 exit;
             }
@@ -57,20 +66,20 @@ if (isset($_POST['submit'])) {
         exit;
     }
 } else if (isset($_REQUEST['apply'])) {
-    $leavetype = $_REQUEST['leavetype'];
-    $fromdate = $_REQUEST['fromdate'];
-    $todate = $_REQUEST['todate'];
-    $inputreason = $_REQUEST['inputreason'];
+    $leavetype = trim($_REQUEST['leavetype']);
+    $fromdate = trim($_REQUEST['fromdate']);
+    $todate = trim($_REQUEST['todate']);
+    $inputreason = trim($_REQUEST['inputreason']);
 
     if ((!empty($leavetype)) && (!empty($fromdate))) {
-        $queryleaveinsert = "INSERT INTO `leave_applications`(`first_name`, `id`,`leave_type`,`from_date`,`to_date`,`reason`) VALUES('$firstname','$userid','$leavetype','$fromdate','$todate','$inputreason')";
-        $upload4 = mysqli_query($conn, $queryleaveinsert);
+        // Use prepared statement to prevent SQL injection
+        $queryleaveinsert = $conn->prepare("INSERT INTO `leave_applications`(`first_name`, `id`,`leave_type`,`from_date`,`to_date`,`reason`) VALUES(?,?,?,?,?,?)");
+        $queryleaveinsert->bind_param("sissss", $firstname, $userid, $leavetype, $fromdate, $todate, $inputreason);
+        $upload4 = $queryleaveinsert->execute();
     } else {
-
         header('Location:leave-application.php');
         exit;
     }
-
 
     header('Location: leave-application.php');
     exit;
@@ -79,27 +88,39 @@ if (isset($_POST['submit'])) {
     if( $_FILES['file']['name'] != "" ) {
         $currentDirectory = getcwd();
         $uploadDirectory = "../uploads/";
-        $fileName = $_FILES['file']['name'];
-        $uploadPath = $currentDirectory . $uploadDirectory . basename($fileName);
-        move_uploaded_file( $_FILES['file']['tmp_name'],$uploadPath) or die( "Could not copy file!");
+        
+        // Sanitize filename and generate a safe unique name
+        $originalFileName = basename($_FILES['file']['name']);
+        $fileExtension = pathinfo($originalFileName, PATHINFO_EXTENSION);
+        $safeFileName = uniqid('file_') . '.' . $fileExtension;
+        
+        $uploadPath = $currentDirectory . $uploadDirectory . $safeFileName;
+        
+        // Validate file type (optional additional security)
+        $allowedTypes = ['jpg', 'jpeg', 'png', 'pdf', 'doc', 'docx'];
+        if (!in_array(strtolower($fileExtension), $allowedTypes)) {
+            die("File type not allowed!");
+        }
+        
+        move_uploaded_file( $_FILES['file']['tmp_name'], $uploadPath) or die( "Could not copy file!");
     }
     else {
         die("No file specified!");
     }
-    $remtype = $_REQUEST['remtype'];
-    $filedon = $_REQUEST['filedon'];
-    $amount = $_REQUEST['amount'];
+    $remtype = trim($_REQUEST['remtype']);
+    $filedon = trim($_REQUEST['filedon']);
+    $amount = trim($_REQUEST['amount']);
 
 
     if ((!empty($remtype)) && (!empty($filedon)) && (!empty($amount))) {
-        $queryreminsert = "INSERT INTO `reimbursments` (`id`,`first_name`,`type`,`filed_on`,`amount`) VALUES('$userid','$firstname','$remtype','$filedon','$amount')";
-        $upload5 = mysqli_query($conn, $queryreminsert);
+        // Use prepared statement to prevent SQL injection
+        $queryreminsert = $conn->prepare("INSERT INTO `reimbursments` (`id`,`first_name`,`type`,`filed_on`,`amount`) VALUES(?,?,?,?,?)");
+        $queryreminsert->bind_param("issss", $userid, $firstname, $remtype, $filedon, $amount);
+        $upload5 = $queryreminsert->execute();
     } else {
-
         header('Location: reimbursment.php');
         exit;
     }
-
 
     header('Location: reimbursment.php');
     exit;
@@ -189,8 +210,11 @@ if (isset($_POST['submit'])) {
 
     <div class="profilewrapper">
         <?php
-        $sql = "SELECT * from users_info where id =(SELECT id from users where username = '{$_SESSION['username']}');";
-        $result = mysqli_query($conn, $sql);
+        // Use prepared statement to prevent SQL injection
+        $stmt = $conn->prepare("SELECT * from users_info where id =(SELECT id from users where username = ?);");
+        $stmt->bind_param("s", $_SESSION['username']);
+        $stmt->execute();
+        $result = $stmt->get_result();
         ?>
         <div class="modal fade" id="myModal">
             <div class="modal-dialog modal-lg">
@@ -206,17 +230,17 @@ if (isset($_POST['submit'])) {
                                 <div class="card-body">
                                     <dl class="row">
                                         <dt class="col-6">Name</dt>
-                                        <dd class="col-6"><?php echo $row['first_name'] . " " . $row['last_name']; ?></dd>
+                                        <dd class="col-6"><?php echo htmlspecialchars($row['first_name']) . " " . htmlspecialchars($row['last_name']); ?></dd>
                                         <dt class="col-6">Email</dt>
-                                        <dd class="col-6"><?php echo $row['email']; ?></dd>
+                                        <dd class="col-6"><?php echo htmlspecialchars($row['email']); ?></dd>
                                         <dt class="col-6">Address</dt>
-                                        <dd class="col-6"><?php echo $row['address']; ?></dd>
+                                        <dd class="col-6"><?php echo htmlspecialchars($row['address']); ?></dd>
                                         <dt class="col-6">Social Security Number</dt>
-                                        <dd class="col-6"><?php echo $row['ssn']; ?></dd>
+                                        <dd class="col-6"><?php echo htmlspecialchars($row['ssn']); ?></dd>
                                         <dt class="col-6">Phone</dt>
-                                        <dd class="col-6"><?php echo $row['phone']; ?></dd>
+                                        <dd class="col-6"><?php echo htmlspecialchars($row['phone']); ?></dd>
                                         <dt class="col-6">Bank Account Number</dt>
-                                        <dd class="col-6"><?php echo $row['bank_account']; ?></dd>
+                                        <dd class="col-6"><?php echo htmlspecialchars($row['bank_account']); ?></dd>
                                     </dl>
                                 </div>
                             </div>
@@ -235,8 +259,11 @@ if (isset($_POST['submit'])) {
 
     <div class="settingswrapper">
         <?php
-        $sql = "SELECT * from users_info where id =(SELECT id from users where username = '{$_SESSION['username']}');";
-        $result = mysqli_query($conn, $sql);
+        // Use prepared statement to prevent SQL injection
+        $stmt = $conn->prepare("SELECT * from users_info where id =(SELECT id from users where username = ?);");
+        $stmt->bind_param("s", $_SESSION['username']);
+        $stmt->execute();
+        $result = $stmt->get_result();
 
         ?>
         <div class="modal fade" id="settingsModal">
@@ -250,47 +277,47 @@ if (isset($_POST['submit'])) {
                         <?php if ($result->num_rows > 0) {
                             $row = mysqli_fetch_assoc($result); ?>
                             <form method="POST" action="#">
-                                <input type='hidden' name='uid' value="<?php echo $_SESSION['id'] ?>">
+                                <input type='hidden' name='uid' value="<?php echo (int)$_SESSION['id'] ?>">
                                 <div class="form-group row">
                                     <label for="inputfirstname" class="col-sm-4 col-form-label">First Name</label>
                                     <div class="col-sm-8">
-                                        <input type="text" class="form-control" value="<?php echo $row['first_name'] ?>" id="inputfirstname" name="inputfirstname" placeholder="First Name">
+                                        <input type="text" class="form-control" value="<?php echo htmlspecialchars($row['first_name']) ?>" id="inputfirstname" name="inputfirstname" placeholder="First Name">
                                     </div>
                                 </div>
                                 <div class="form-group row">
                                     <label for="inputlastname" class="col-sm-4 col-form-label">Last Name</label>
                                     <div class="col-sm-8">
-                                        <input type="text" class="form-control" value="<?php echo $row['last_name'] ?>" id="inputlastname" name="inputlastname" placeholder="Last Name">
+                                        <input type="text" class="form-control" value="<?php echo htmlspecialchars($row['last_name']) ?>" id="inputlastname" name="inputlastname" placeholder="Last Name">
                                     </div>
                                 </div>
                                 <div class="form-group row">
                                     <label for="inputphone" class="col-sm-4 col-form-label">Phone</label>
                                     <div class="col-sm-8">
-                                        <input type="tel" class="form-control" value="<?php echo $row['phone'] ?>" id="inputphone" name="inputphone" placeholder="Phone Number">
+                                        <input type="tel" class="form-control" value="<?php echo htmlspecialchars($row['phone']) ?>" id="inputphone" name="inputphone" placeholder="Phone Number">
                                     </div>
                                 </div>
                                 <div class="form-group row">
                                     <label for="inputEmail" class="col-sm-4 col-form-label">Email</label>
                                     <div class="col-sm-8">
-                                        <input type="email" class="form-control" value="<?php echo $row['email'] ?>" id="inputEmail" name="inputEmail" placeholder="Email">
+                                        <input type="email" class="form-control" value="<?php echo htmlspecialchars($row['email']) ?>" id="inputEmail" name="inputEmail" placeholder="Email">
                                     </div>
                                 </div>
                                 <div class="form-group row">
                                     <label for="inputAddress" class="col-sm-4 col-form-label">Address</label>
                                     <div class="col-sm-8">
-                                        <input type="text" class="form-control" value="<?php echo $row['address'] ?>" id="inputAddress" name="inputAddress" placeholder="Address">
+                                        <input type="text" class="form-control" value="<?php echo htmlspecialchars($row['address']) ?>" id="inputAddress" name="inputAddress" placeholder="Address">
                                     </div>
                                 </div>
                                 <div class="form-group row">
                                     <label for="inputssn" class="col-sm-4 col-form-label">SSN</label>
                                     <div class="col-sm-8">
-                                        <input type="text" class="form-control" value="<?php echo $row['ssn'] ?>" id="inputssn" name="inputssn" placeholder="SSN">
+                                        <input type="text" class="form-control" value="<?php echo htmlspecialchars($row['ssn']) ?>" id="inputssn" name="inputssn" placeholder="SSN">
                                     </div>
                                 </div>
                                 <div class="form-group row">
                                     <label for="inputbank" class="col-sm-4 col-form-label">Account Number</label>
                                     <div class="col-sm-8">
-                                        <input type="text" class="form-control" value="<?php echo $row['bank_account'] ?>" id="inputbank" name="inputbank" placeholder="SSN">
+                                        <input type="text" class="form-control" value="<?php echo htmlspecialchars($row['bank_account']) ?>" id="inputbank" name="inputbank" placeholder="SSN">
                                     </div>
                                 </div>
                                 <div class="form-group row">
@@ -351,9 +378,11 @@ if (isset($_POST['submit'])) {
                                         </thead>
                                         <tbody class="tablebodyrows">
                                             <?php
-                                            // $uid = "SELECT id from users where username = '{$_SESSION['username']}';";
-                                            $querycom = "select complaint_id, message, remark from `complaints` where first_name = '{$_SESSION['username']}' LIMIT 7;";
-                                            $comresult = mysqli_query($conn, $querycom);
+                                            // Use prepared statement to prevent SQL injection
+                                            $stmt = $conn->prepare("SELECT complaint_id, message, remark FROM `complaints` WHERE first_name = ? LIMIT 7");
+                                            $stmt->bind_param("s", $_SESSION['username']);
+                                            $stmt->execute();
+                                            $comresult = $stmt->get_result();
 
                                             if (!$comresult) {
                                                 die("Invalid Query: ");
@@ -361,9 +390,9 @@ if (isset($_POST['submit'])) {
 
                                             while ($comrow = $comresult->fetch_assoc()) {
                                                 echo "<tr>
-                                                    <td>" . $comrow["complaint_id"] . "</td>
-                                                    <td>" . $comrow["message"] . "</td>
-                                                    <td>" . $comrow["remark"] . "</td>;
+                                                    <td>" . htmlspecialchars($comrow["complaint_id"]) . "</td>
+                                                    <td>" . htmlspecialchars($comrow["message"]) . "</td>
+                                                    <td>" . htmlspecialchars($comrow["remark"]) . "</td>;
                                                 </tr>";
                                             }
                                             ?>
@@ -386,15 +415,19 @@ if (isset($_POST['submit'])) {
                                             </div>
                                             <div>
                                                 <?php
-                                                    $userquery = "SELECT id, organization_id from users where username = '{$_SESSION['username']}';";
-                                                    $userresult = mysqli_query($conn, $userquery);
+                                                    // Use prepared statement to prevent SQL injection
+                                                    $stmt = $conn->prepare("SELECT id, organization_id FROM users WHERE username = ?");
+                                                    $stmt->bind_param("s", $_SESSION['username']);
+                                                    $stmt->execute();
+                                                    $userresult = $stmt->get_result();
+                                                    
                                                     if (!$userresult) {
                                                         die("Invalid Query: ");
                                                     }
                                                     $userrow = $userresult->fetch_assoc();
-                                                    echo "<input type='hidden' name='id' value=". $userrow["id"] .">";
-                                                    echo "<input type='hidden' name='organization_id' value=". $userrow["organization_id"] .">";
-                                                    echo "<input type='hidden' name='username' value=". $_SESSION['username'] .">";
+                                                    echo "<input type='hidden' name='id' value=" . (int)$userrow["id"] .">";
+                                                    echo "<input type='hidden' name='organization_id' value=" . (int)$userrow["organization_id"] .">";
+                                                    echo "<input type='hidden' name='username' value='" . htmlspecialchars($_SESSION['username']) ."'>";
                                                 ?>
                                             </div>
                                         </div>

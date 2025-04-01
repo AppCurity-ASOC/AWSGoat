@@ -7,44 +7,53 @@ session_start();
 error_reporting(0);
 
 if (isset($_GET['organization'])) {
-	$oidres = mysqli_query($conn,"SELECT organization_id from organizations where organization = '{$_GET['organization']}'");
-	$oidq = mysqli_fetch_assoc($oidres);
+	$organization = mysqli_real_escape_string($conn, $_GET['organization']);
+	$oidres = mysqli_prepare($conn, "SELECT organization_id FROM organizations WHERE organization = ?");
+	mysqli_stmt_bind_param($oidres, "s", $organization);
+	mysqli_stmt_execute($oidres);
+	$result = mysqli_stmt_get_result($oidres);
+	$oidq = mysqli_fetch_assoc($result);
 	$oid = $oidq['organization_id'];
 	$_SESSION['organization_id'] = $oid; 
     header("Location: ./superadmin/superadmin-index.php");
+    exit(); // Prevent further execution after redirect
 }
 
 if (isset($_POST['submit'])) {
-	$email = $_POST['email'];
-	$password = md5($_POST['password']);
+	$email = mysqli_real_escape_string($conn, $_POST['email']);
+	// Use password_hash and password_verify instead of md5
+	$password = $_POST['password']; // Store plain password temporarily for verification
 
-	$sql = "SELECT * FROM users WHERE email='$email' AND password='$password' LIMIT 1";
-	$result = mysqli_query($conn, $sql);
+	$sql = "SELECT * FROM users WHERE email=? LIMIT 1";
+	$stmt = mysqli_prepare($conn, $sql);
+	mysqli_stmt_bind_param($stmt, "s", $email);
+	mysqli_stmt_execute($stmt);
+	$result = mysqli_stmt_get_result($stmt);
+
 	if ($result->num_rows > 0) {
 		$row = mysqli_fetch_assoc($result);
-		$_SESSION['username'] = $row['username'];
-		$_SESSION['id'] = $row['id'];
-		$_SESSION['isadmin']  = $row['isadmin'];
-		$isadmin = $row['isadmin'];
-		$_SESSION['organization_id'] = $row['organization_id'];
-		
-		if($result->num_rows > 1){
-			while($row = $result->fetch_assoc()){
-				$_SESSION['username'] = $row['username'];
-				$_SESSION['id'] = $row['id'];
-				$_SESSION['isadmin']  = $row['isadmin'];
-				$isadmin = $row['isadmin'];
-				$_SESSION['organization_id'] = $row['organization_id'];
+		// Verify password - assuming the database still uses MD5 hashes
+		// In a real scenario, you would migrate to password_hash
+		if (md5($password) === $row['password']) {
+			$_SESSION['username'] = $row['username'];
+			$_SESSION['id'] = $row['id'];
+			$_SESSION['isadmin']  = $row['isadmin'];
+			$isadmin = $row['isadmin'];
+			$_SESSION['organization_id'] = $row['organization_id'];
+			
+			if ($isadmin == 0) {
+				header("Location: ./user/index.php");
+				exit(); // Prevent further execution after redirect
+			} else if($isadmin == 1) {
+				header("Location: ./admin/admin-index.php");
+				exit(); // Prevent further execution after redirect
+			} else if($isadmin == 2) {
+				$_SESSION['organization_id'] = 1;
+				header("Location: ./superadmin/superadmin-index.php");
+				exit(); // Prevent further execution after redirect
 			}
-		}
-		if ($isadmin == 0)
-			header("Location: ./user/index.php");
-		else if($isadmin == 1){
-			header("Location: ./admin/admin-index.php");
-		}
-		else if($isadmin == 2){
-			$_SESSION['organization_id'] = 1;
-			header("Location: ./superadmin/superadmin-index.php");
+		} else {
+			echo "<script>alert('Email or Password is Wrong.')</script>";
 		}
 	} 
 	else {
@@ -74,10 +83,10 @@ if (isset($_POST['submit'])) {
 			<div style="text-align:center;"><img src="./images/logo-login.png" height ="100" width="180"></div>
 			<p class="login-text" style="font-size: 2rem; font-weight: 800;">Login</p>
 			<div class="input-group">
-				<input type="email" placeholder="Email" name="email" value="<?php echo $email; ?>" required>
+				<input type="email" placeholder="Email" name="email" value="<?php echo htmlspecialchars($email ?? ''); ?>" required>
 			</div>
 			<div class="input-group">
-				<input type="password" placeholder="Password" name="password" value="<?php echo $_POST['password']; ?>" required>
+				<input type="password" placeholder="Password" name="password" required>
 			</div>
 			<div class="input-group">
 				<button name="submit" class="btn">Login</button>
